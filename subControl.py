@@ -51,7 +51,9 @@ try:
 
 
     while True:
-        data = controller.read()
+        data = get_udp_data()
+        if data is None:
+            continue
 
         # Map joystick inputs to control variables
         tail_input = data['leftVertical'] > 0.1
