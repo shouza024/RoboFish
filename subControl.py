@@ -6,6 +6,7 @@ from controller import XboxController
 from autoFunctions import ConstantDepthControl
 from components import Thrusters, TailServo, LED
 import time
+from udp_receiver import get_udp_data
 
 ## Pi Board Setup ----------------------------------------------------------------------------------------
 GPIO.setmode(GPIO.BCM)
