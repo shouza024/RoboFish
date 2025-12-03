@@ -2,7 +2,6 @@
 
 import RPi.GPIO as GPIO
 from pymavlink import mavutil
-from controller import XboxController
 from autoFunctions import ConstantDepthControl
 from components import Thrusters, TailServo, LED
 import time
