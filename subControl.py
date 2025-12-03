@@ -51,7 +51,7 @@ try:
         data = get_udp_data()
         if data is None:
             continue
-
+        print("CONTROL DATA:", data)    #show controller input, comment out once control setup is good
         # Map joystick inputs to control variables
         tail_input = data['leftVertical'] > 0.1
         back = data['leftVertical'] < -0.1
