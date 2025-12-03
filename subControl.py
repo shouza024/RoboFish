@@ -40,7 +40,6 @@ prev_led_state = False
 
 ## Main Control Loop -------------------------------------------------------------------------------------
 try:
-    controller=XboxController()
     arm_vehicle()
     thrusters = Thrusters(master)
     tail_servo = TailServo(master, servo_channel=7)
