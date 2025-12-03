@@ -40,9 +40,7 @@ prev_led_state = False
 
 ## Main Control Loop -------------------------------------------------------------------------------------
 try:
-    data = get_udp_data()
-    if data is None:
-        continue
+    controller=XboxController()
     arm_vehicle()
     thrusters = Thrusters(master)
     tail_servo = TailServo(master, servo_channel=7)
