@@ -1,10 +1,12 @@
-from udp_receiver import get_udp_data
-import time
+import socket
+import json
+
+UDP_PORT = 5005
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(("0.0.0.0", UDP_PORT))
+print(f"Listening on UDP port {UDP_PORT}")
 
 while True:
-    try:
-        data = get_udp_data()
-        print("Control Data",data)
-        time.sleep(0.4)
-    except Exception as e:
-        print("Error",e)
+    data, addr = sock.recvfrom(1024)
+    decoded = json.loads(data.decode())
+    print("UDP Received from", addr, decoded)
