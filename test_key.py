@@ -4,7 +4,7 @@ import time
 import threading
 
 # -----------------------------
-# Connect to Pixhawk
+# PIXHAWK CONNECTION
 # -----------------------------
 print("Connecting to Pixhawk...")
 connection = mavutil.mavlink_connection('COM7', baud=115200)
@@ -12,7 +12,7 @@ connection.wait_heartbeat()
 print("Heartbeat received!")
 
 # -----------------------------
-# Arm the vehicle
+# ARM VEHICLE
 # -----------------------------
 print("Arming Pixhawk...")
 connection.mav.command_long_send(
@@ -23,7 +23,6 @@ connection.mav.command_long_send(
     1, 0, 0, 0, 0, 0, 0
 )
 
-# Wait until armed
 while True:
     hb = connection.recv_match(type='HEARTBEAT', blocking=True)
     if hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED:
@@ -31,30 +30,33 @@ while True:
         break
     time.sleep(0.1)
 
-# -----------------------------
-# Channel definitions
-# -----------------------------
-motor_channels = [1, 2, 3, 4]  # ESCs on MAIN OUT 1–4
-servo_channel = 7               # Servo on AUX7
 
-# PWM values
+# -----------------------------
+# CHANNEL ASSIGNMENTS
+# -----------------------------
+motor_channels = [1, 2, 3, 4]   # Main outputs 1–4
+servo_channel = 9               # AUX1 = SERVO9  (IMPORTANT!)
+
+# Motor PWM definitions
 PWM_STOP = 1500
 PWM_HALF = 1750
 PWM_FULL = 1900
 
-SERVO_MIN = 1100
-SERVO_MAX = 1900
+# Servo oscillation limits (±65 degrees -> roughly ±360 µs)
+SERVO_CENTER =1500
+SERVO_RANGE = 500    
+SERVO_MIN = SERVO_CENTER - SERVO_RANGE
+SERVO_MAX = SERVO_CENTER + SERVO_RANGE
 
-# States
+# System state
 servo_running = False
 stop_script = False
-
-# Motor PWM storage
 motor_pwms = [PWM_STOP] * 4
-servo_pwm = 1500  # persistent servo PWM
+servo_pwm = SERVO_CENTER
+
 
 # -----------------------------
-# Send motor PWM via RC override
+# SEND MOTOR PWM (RC override)
 # -----------------------------
 def send_motor_pwm():
     rc = [0] * 16
@@ -66,14 +68,11 @@ def send_motor_pwm():
         *rc
     )
 
+
 # -----------------------------
-# Send servo PWM via MAV_CMD_DO_SET_SERVO
+# SEND SERVO PWM via DO_SET_SERVO
 # -----------------------------
 def set_servo_pwm(channel, pwm):
-    """
-    channel: 1–14 (matches SERVOx_FUNCTION)
-    pwm: 1000–2000 µs
-    """
     connection.mav.command_long_send(
         connection.target_system,
         connection.target_component,
@@ -84,18 +83,22 @@ def set_servo_pwm(channel, pwm):
         0, 0, 0, 0, 0
     )
 
+
 # -----------------------------
-# Servo oscillation thread
+# SERVO OSCILLATION THREAD
 # -----------------------------
 def servo_oscillator():
-    global servo_running, servo_pwm
-    pwm = servo_pwm
-    direction = 1
-    while servo_running:
-        servo_pwm = pwm
-        set_servo_pwm(servo_channel, pwm)  # send independent of motors
+    global servo_pwm, servo_running
 
-        pwm += direction * 20
+    pwm = SERVO_CENTER
+    direction = 1
+
+    while servo_running:
+        set_servo_pwm(servo_channel, pwm)
+        servo_pwm = pwm
+
+        pwm += direction * 40   # smooth step
+
         if pwm >= SERVO_MAX:
             pwm = SERVO_MAX
             direction = -1
@@ -103,106 +106,92 @@ def servo_oscillator():
             pwm = SERVO_MIN
             direction = 1
 
-        time.sleep(0.05)
+        time.sleep(0.03)# speed of oscillation
+
 
 # -----------------------------
-# Keyboard handler
+# KEYBOARD HANDLER
 # -----------------------------
 def on_press(key):
-    global motor_pwms, servo_running, stop_script, servo_pwm
+    global motor_pwms, servo_running, stop_script,SERVO_RANGE
 
     try:
         k = key.char.lower()
     except:
         k = None
 
-    # Throttle control (1&2 forward, 3&4 reverse if bidirectional ESCs)
+    # Throttle commands
     if k == 'f':
-        motor_pwms[0] = PWM_FULL
-        motor_pwms[1] = PWM_FULL
-        motor_pwms[2] = PWM_STOP - (PWM_FULL - PWM_STOP)
-        motor_pwms[3] = PWM_STOP - (PWM_FULL - PWM_STOP)
+        motor_pwms = [PWM_FULL, PWM_FULL,
+                      PWM_FULL, PWM_FULL]
         send_motor_pwm()
-        print("Full throttle applied")
+        print("Full throttle")
+
     elif k == 'h':
-        motor_pwms[0] = PWM_HALF
-        motor_pwms[1] = PWM_HALF
-        motor_pwms[2] = PWM_STOP - (PWM_HALF - PWM_STOP)
-        motor_pwms[3] = PWM_STOP - (PWM_HALF - PWM_STOP)
+        motor_pwms = [PWM_HALF, PWM_HALF,
+                      PWM_HALF, PWM_HALF]
         send_motor_pwm()
-        print("Half throttle applied")
+        print("Half throttle")
+
     elif k == 'z':
         motor_pwms = [PWM_STOP]*4
         send_motor_pwm()
         print("Motors stopped")
 
-    # Individual motor adjustments (increase)
-    elif k == '1':
-        motor_pwms[0] += 50
+    # Individual motor increase
+    elif k in ['1', '2', '3', '4']:
+        idx = int(k) - 1
+        motor_pwms[idx] += 50
         send_motor_pwm()
-        print(f"Motor 1 PWM: {motor_pwms[0]}")
-    elif k == '2':
-        motor_pwms[1] += 50
-        send_motor_pwm()
-        print(f"Motor 2 PWM: {motor_pwms[1]}")
-    elif k == '3':
-        motor_pwms[2] += 50
-        send_motor_pwm()
-        print(f"Motor 3 PWM: {motor_pwms[2]}")
-    elif k == '4':
-        motor_pwms[3] += 50
-        send_motor_pwm()
-        print(f"Motor 4 PWM: {motor_pwms[3]}")
+        print(f"Motor {idx+1} PWM: {motor_pwms[idx]}")
 
-    # Individual motor adjustments (decrease)
-    elif k == 'q':
-        motor_pwms[0] -= 50
+    # Individual motor decrease
+    elif k in ['q', 'w', 'e', 'r']:
+        idx = ['q','w','e','r'].index(k)
+        motor_pwms[idx] -= 50
         send_motor_pwm()
-        print(f"Motor 1 PWM: {motor_pwms[0]}")
-    elif k == 'w':
-        motor_pwms[1] -= 50
-        send_motor_pwm()
-        print(f"Motor 2 PWM: {motor_pwms[1]}")
-    elif k == 'e':
-        motor_pwms[2] -= 50
-        send_motor_pwm()
-        print(f"Motor 3 PWM: {motor_pwms[2]}")
-    elif k == 'r':
-        motor_pwms[3] -= 50
-        send_motor_pwm()
-        print(f"Motor 4 PWM: {motor_pwms[3]}")
+        print(f"Motor {idx+1} PWM: {motor_pwms[idx]}")
 
-    # Servo oscillation
+    # Servo oscillation start
     elif k == 's':
         if not servo_running:
             servo_running = True
             threading.Thread(target=servo_oscillator, daemon=True).start()
-            print("Starting servo oscillation")
+            print("Servo oscillation started")
+    elif k == 'd':
+        if not servo_running:
+            servo_running = True
+            SERVO_RANGE=+50
+            threading.Thread(target=servo_oscillator, daemon=True).start()
+            print("Servo oscillation started")        
+
+    # Servo oscillation stop
     elif k == 'x':
         servo_running = False
-        set_servo_pwm(servo_channel, 1500)  # return to center
-        print("Stopping servo oscillation")
+        set_servo_pwm(servo_channel, SERVO_CENTER)
+        print("Servo oscillation stopped")
 
-    # Stop script
+    # ESC to stop script
     elif key == keyboard.Key.esc:
         stop_script = True
         return False
 
-# -----------------------------
-# Start keyboard listener
-# -----------------------------
+
+# Start listening
 listener = keyboard.Listener(on_press=on_press)
 listener.start()
 
+
 # -----------------------------
-# Main loop
+# MAIN LOOP
 # -----------------------------
+print("Running control loop. Press ESC to quit.")
 while not stop_script:
-    send_motor_pwm()  # continuously send motor PWM
+    send_motor_pwm()
     time.sleep(0.1)
 
 # -----------------------------
-# Disarm vehicle
+# DISARMxsxsxsxsxsxsxsxsxsx1sx111qqqq1111111qqqqqqqs
 # -----------------------------
 connection.mav.command_long_send(
     connection.target_system,
@@ -212,4 +201,4 @@ connection.mav.command_long_send(
     0, 0, 0, 0, 0, 0, 0
 )
 
-print("Disarmed. Exiting.")
+print("Disarmed and exiting.")
